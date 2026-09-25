@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC - Dispositivo A</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #111827;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: auto;
+            background: #1f2937;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        textarea,
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border: none;
+        }
+
+        textarea {
+            height: 160px;
+            resize: vertical;
+            background: #111827;
+            color: white;
+        }
+
+        button {
+            padding: 12px 18px;
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+            margin: 5px 0;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        #chat {
+            height: 250px;
+            overflow-y: auto;
+            background: #111827;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 15px;
+        }
+
+        .msg {
+            padding: 8px;
+            margin: 5px 0;
+            background: #374151;
+            border-radius: 6px;
+        }
+
+        .mine {
+            background: #2563eb;
+            text-align: right;
+        }
+
+        #status {
+            padding: 12px;
+            background: #374151;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🅰️ Dispositivo A</h1>
+
+    <div id="status">
+        🔴 Desconectado
+    </div>
+
+    <h3>1. Criar oferta</h3>
+
+    <button onclick="criarOferta()">
+        Criar Offer
+    </button>
+
+    <textarea
+        id="offer"
+        readonly
+        placeholder="A oferta aparecerá aqui..."
+    ></textarea>
+
+    <h3>2. Cole aqui a resposta do dispositivo B</h3>
+
+    <textarea
+        id="answer"
+        placeholder="Cole o Answer aqui..."
+    ></textarea>
+
+    <button onclick="receberAnswer()">
+        Conectar ao B
+    </button>
+
+    <hr>
+
+    <h2>💬 Chat</h2>
+
+    <div id="chat"></div>
+
+    <input
+        id="mensagem"
+        placeholder="Digite uma mensagem..."
+        onkeydown="if(event.key === 'Enter') enviarMensagem()"
+    >
+
+    <button onclick="enviarMensagem()">
+        Enviar
+    </button>
+
+</div>
+
+
+<script>
+
+let peer = null;
+let channel = null;
+
+
+/*
+ * SERVIDORES STUN
+ */
+
+const config = {
+
+    iceServers: [
+
+        {
+            urls: "stun:stun.l.google.com:19302"
+        },
+
+        {
+            urls: "stun:stun1.l.google.com:19302"
+        }
+
+    ]
+
+};
+
+
+/*
+ * CRIAR OFERTA
+ */
+
+async function criarOferta() {
+
+    peer = new RTCPeerConnection(config);
+
+
+    /*
+     * CRIA O DATA CHANNEL
+     */
+
+    channel = peer.createDataChannel("chess");
+
+
+    configurarChannel(channel);
+
+
+    /*
+     * CRIA OFFER
+     */
+
+    const offer = await peer.createOffer();
+
+    await peer.setLocalDescription(offer);
+
+
+    /*
+     * Espera os ICE candidates
+     */
+
+    await esperarICE();
+
+
+    /*
+     * Coloca a oferta no textarea
+     */
+
+    document.getElementById("offer").value =
+        JSON.stringify(peer.localDescription);
+
+
+    document.getElementById("status").innerText =
+        "🟡 Oferta criada. Envie para o dispositivo B.";
+
+}
+
+
+/*
+ * ESPERAR ICE
+ */
+
+function esperarICE() {
+
+    return new Promise(resolve => {
+
+        if (
+            peer.iceGatheringState === "complete"
+        ) {
+
+            resolve();
+
+            return;
+        }
+
+
+        function verificar() {
+
+            if (
+                peer.iceGatheringState === "complete"
+            ) {
+
+                peer.removeEventListener(
+                    "icegatheringstatechange",
+                    verificar
+                );
+
+                resolve();
+
+            }
+
+        }
+
+
+        peer.addEventListener(
+            "icegatheringstatechange",
+            verificar
+        );
+
+    });
+
+}
+
+
+/*
+ * RECEBER ANSWER
+ */
+
+async function receberAnswer() {
+
+    const texto =
+        document.getElementById("answer").value.trim();
+
+
+    if (!texto) {
+
+        alert("Cole o Answer do dispositivo B.");
+
+        return;
+
+    }
+
+
+    try {
+
+        const answer =
+            JSON.parse(texto);
+
+
+        await peer.setRemoteDescription(
+            new RTCSessionDescription(answer)
+        );
+
+
+        document.getElementById("status").innerText =
+            "🟡 Conectando...";
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert("Answer inválido.");
+
+    }
+
+}
+
+
+/*
+ * CONFIGURAR DATA CHANNEL
+ */
+
+function configurarChannel(channel) {
+
+    channel.onopen = () => {
+
+        console.log(
+            "DataChannel conectado!"
+        );
+
+
+        document.getElementById("status").innerText =
+            "🟢 CONECTADO AO DISPOSITIVO B!";
+
+    };
+
+
+    channel.onclose = () => {
+
+        document.getElementById("status").innerText =
+            "🔴 Conexão encerrada";
+
+    };
+
+
+    channel.onerror = error => {
+
+        console.error(
+            "DataChannel error:",
+            error
+        );
+
+    };
+
+
+    channel.onmessage = event => {
+
+        try {
+
+            const message =
+                JSON.parse(event.data);
+
+
+            console.log(
+                "Recebi:",
+                message
+            );
+
+
+            if (
+                message.type === "chat"
+            ) {
+
+                adicionarMensagem(
+                    message.text,
+                    false
+                );
+
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Mensagem inválida:",
+                event.data
+            );
+
+        }
+
+    };
+
+}
+
+
+/*
+ * ENVIAR CHAT
+ */
+
+function enviarMensagem() {
+
+    const input =
+        document.getElementById("mensagem");
+
+
+    const texto =
+        input.value.trim();
+
+
+    if (!texto) {
+        return;
+    }
+
+
+    if (
+        !channel ||
+        channel.readyState !== "open"
+    ) {
+
+        alert(
+            "Ainda não conectado ao dispositivo B."
+        );
+
+        return;
+
+    }
+
+
+    const message = {
+
+        type: "chat",
+
+        text: texto
+
+    };
+
+
+    channel.send(
+        JSON.stringify(message)
+    );
+
+
+    adicionarMensagem(
+        texto,
+        true
+    );
+
+
+    input.value = "";
+
+}
+
+
+/*
+ * MOSTRAR MENSAGEM
+ */
+
+function adicionarMensagem(
+    texto,
+    minha
+) {
+
+    const chat =
+        document.getElementById("chat");
+
+
+    const div =
+        document.createElement("div");
+
+
+    div.className =
+        minha
+            ? "msg mine"
+            : "msg";
+
+
+    div.textContent =
+        texto;
+
+
+    chat.appendChild(div);
+
+
+    chat.scrollTop =
+        chat.scrollHeight;
+
+}
+
+</script>
+
+</body>
+</html>
